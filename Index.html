@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repeat Sales Chart – Dev Reference</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f0f2f7; color: #1a1a1a; min-height: 100vh; padding: 32px 24px; }
+
+.page-header { margin-bottom: 28px; }
+.page-header h1 { font-family: 'Georgia', serif; font-size: 22px; font-weight: 400; letter-spacing: -0.3px; margin-bottom: 5px; }
+.page-header p { font-size: 13px; color: #666; }
+
+.scenario-tabs { display: flex; gap: 4px; margin-bottom: 20px; background: #e4e6ed; padding: 4px; border-radius: 8px; width: fit-content; flex-wrap: wrap; }
+.scenario-tab { padding: 7px 13px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; background: transparent; color: #555; transition: all 0.15s; white-space: nowrap; }
+.scenario-tab.active { background: #fff; color: #1a1a1a; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+
+.scenario-desc { font-size: 12px; color: #555; margin-bottom: 14px; line-height: 1.6; padding: 10px 14px; background: #f7f8fb; border-left: 3px solid #1e50a0; border-radius: 0 6px 6px 0; }
+.scenario-desc strong { color: #1a1a1a; }
+
+/* Collapse header */
+.chart-collapse-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 20px; background: #fff; border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer;
+  user-select: none; position: sticky; top: 0; z-index: 100;
+  /* hidden until user scrolls past the chart */
+  opacity: 0; pointer-events: none; margin-bottom: 0;
+  transition: opacity 0.2s;
+}
+.chart-collapse-header.stuck {
+  opacity: 1; pointer-events: all; margin-bottom: 2px;
+}
+.chart-collapse-header.stuck.expanded { border-radius: 12px 12px 0 0; margin-bottom: 0; }
+.chart-collapse-title { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+.chart-collapse-chevron { font-size: 10px; color: #888; transition: transform 0.2s; display: inline-block; }
+.chart-collapse-header.expanded .chart-collapse-chevron { transform: rotate(180deg); }
+.chart-collapsible { max-height: 0; overflow: hidden; transition: max-height 0.28s ease; }
+.chart-collapsible.expanded { max-height: 700px; }
+/* When sticky header is active, expanded collapsible is sticky below header */
+.chart-collapse-header.stuck ~ .chart-collapsible.expanded {
+  position: sticky;
+  top: 44px;
+  z-index: 95;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  border-radius: 0 0 12px 12px;
+  background: #fff;
+}
+/* Chart wrapper — position:relative so popover can be absolute inside it */
+.chart-wrapper { background: #fff; border-radius: 0 0 12px 12px; padding: 24px 24px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); position: relative; }
+.chart-area { position: relative; width: 100%; }
+.chart-area svg { width: 100%; height: auto; overflow: visible; display: block; }
+
+/* Estimate toggle */
+.est-toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer; width: fit-content; }
+.est-toggle input[type=checkbox] { display: none; }
+.toggle-track {
+  width: 32px; height: 18px; background: #ddd; border-radius: 9px;
+  position: relative; transition: background 0.2s; flex-shrink: 0;
+}
+.toggle-track::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: transform 0.2s;
+}
+.est-toggle input:checked + .toggle-track { background: #1a3a6e; }
+.est-toggle input:checked + .toggle-track::after { transform: translateX(14px); }
+.toggle-label { font-size: 12px; color: #555; }
+
+/* Year picker */
+.year-picker { display: flex; gap: 3px; margin-bottom: 12px; }
+.year-btn { padding: 5px 11px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; color: #555; }
+.year-btn.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+/* Last sale badge */
+.last-sale-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #888; background: #f7f7f7; border: 1px solid #e8e8e8; border-radius: 20px; padding: 3px 10px; margin-bottom: 10px; }
+.last-sale-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #bbb; flex-shrink: 0; }
+
+/* Zoom */
+.zoom-section { margin-top: 12px; user-select: none; }
+.zoom-label { font-size: 10px; color: #aaa; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 5px; }
+.zoom-track { position: relative; width: 100%; height: 32px; background: #f0f2f7; border-radius: 4px; cursor: crosshair; }
+.zoom-mini-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.zoom-shade { position: absolute; top: 0; height: 100%; background: rgba(240,242,247,0.8); pointer-events: none; }
+.zoom-shade.left { left: 0; border-radius: 4px 0 0 4px; }
+.zoom-shade.right { right: 0; border-radius: 0 4px 4px 0; }
+.zoom-sel { position: absolute; top: 0; height: 100%; border: 2px solid #1e50a0; border-radius: 3px; background: rgba(30,80,160,0.08); cursor: grab; }
+.zoom-sel:active { cursor: grabbing; }
+.zoom-handle { position: absolute; top: 50%; transform: translateY(-50%); width: 12px; height: 24px; background: #1e50a0; border-radius: 3px; cursor: ew-resize; display: flex; align-items: center; justify-content: center; z-index: 2; }
+.zoom-handle::after { content: ''; width: 2px; height: 10px; background: rgba(255,255,255,0.6); border-radius: 1px; box-shadow: 3px 0 0 rgba(255,255,255,0.6), -3px 0 0 rgba(255,255,255,0.6); }
+.zoom-handle.left { left: -6px; }
+.zoom-handle.right { right: -6px; }
+
+/* Legend */
+.legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #666; }
+
+/* Hover tooltip */
+.chart-tooltip {
+  position: fixed;
+  background: #1a1a1a; color: #fff;
+  padding: 9px 12px; border-radius: 7px;
+  font-size: 12px; pointer-events: none;
+  z-index: 9999; min-width: 150px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  opacity: 0; transition: opacity 0.1s;
+  white-space: nowrap;
+}
+.chart-tooltip.show { opacity: 1; }
+.tt-price { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.tt-meta { color: #aaa; font-size: 11px; margin-bottom: 4px; }
+.tt-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+.tt-badge.sold { background: #2a7a4a; }
+.tt-badge.unsold { background: #888; }
+.tt-badge.upcoming { background: #1e50a0; }
+.tt-badge.unavailable { background: #666; }
+
+/* Click popover — fixed position, lives on body */
+.dot-popover {
+  position: fixed;
+  width: 220px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15), 0 2px 6px rgba(0,0,0,0.08);
+  z-index: 9999;
+  overflow: hidden;
+  display: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.dot-popover.show {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+.pop-img { width: 100%; height: 80px; background: #f0f2f7; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #bbb; border-bottom: 1px solid #eee; }
+.pop-body { padding: 12px 14px 14px; }
+.pop-row1 { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.pop-badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.pop-badge.sold { background: #e6f4ea; color: #2a7a4a; }
+.pop-badge.unsold { background: #f0f0f0; color: #666; border: 1px solid #ddd; }
+.pop-badge.upcoming { background: #dde8ff; color: #1e50a0; }
+.pop-badge.unavailable { background: #f0f0f0; color: #888; border: 1px solid #ddd; }
+.pop-year { font-size: 11px; color: #aaa; }
+.pop-title { font-size: 13px; font-weight: 600; line-height: 1.35; margin-bottom: 2px; color: #1a1a1a; }
+.pop-auction { font-size: 11px; color: #888; margin-bottom: 10px; }
+.pop-price { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-bottom: 1px; }
+.pop-nosale { font-size: 14px; font-weight: 600; color: #999; margin-bottom: 1px; }
+.pop-est { font-size: 11px; color: #aaa; margin-bottom: 12px; }
+.pop-link { display: block; text-align: center; padding: 8px; font-size: 12px; font-weight: 500; color: #1e50a0; background: #f5f7fd; border: 1px solid #d0d8ee; border-radius: 6px; text-decoration: none; cursor: pointer; }
+.pop-link:hover { background: #e8edf8; }
+.pop-close { position: absolute; top: 7px; right: 7px; width: 22px; height: 22px; border-radius: 50%; border: none; background: rgba(0,0,0,0.1); color: #555; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.pop-close:hover { background: rgba(0,0,0,0.18); }
+
+/* Empty state */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: #888; gap: 10px; }
+.empty-cta { font-size: 12px; color: #1e50a0; border: 1px solid #1e50a0; border-radius: 4px; padding: 6px 14px; cursor: pointer; background: transparent; }
+
+/* Selected lot card */
+.lot-card-wrapper {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.lot-card-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.lot-card-nav-label {
+  font-size: 11px;
+  color: #888;
+}
+.lot-card-nav-btns { display: flex; gap: 6px; align-items: center; }
+.lot-nav-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid #ddd; background: #fff;
+  cursor: pointer; font-size: 13px; color: #555;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.lot-nav-btn:hover:not(:disabled) { border-color: #1a3a6e; color: #1a3a6e; }
+.lot-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.lot-card-close {
+  font-size: 11px; color: #aaa; cursor: pointer;
+  padding: 4px 8px; border-radius: 4px; border: 1px solid #eee;
+  background: #fff; transition: all 0.12s;
+}
+.lot-card-close:hover { color: #555; border-color: #ccc; }
+
+.lot-card {
+  display: flex; gap: 16px; padding: 16px;
+  align-items: flex-start;
+}
+.lot-card-img {
+  width: 80px; height: 80px; flex-shrink: 0;
+  background: #f0f2f7; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #bbb;
+}
+.lot-card-body { flex: 1; min-width: 0; }
+.lot-card-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; line-height: 1.3; }
+.lot-card-auction { font-size: 12px; color: #888; margin-bottom: 10px; }
+.lot-card-row { display: flex; gap: 24px; flex-wrap: wrap; }
+.lot-card-field label { display: block; font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.lot-card-field span { font-size: 13px; font-weight: 500; }
+.lot-card-link {
+  display: inline-block; margin-top: 12px;
+  font-size: 12px; color: #1e50a0; text-decoration: none;
+  border: 1px solid #d0d8ee; border-radius: 4px;
+  padding: 5px 12px; background: #f5f7fd;
+}
+.lot-card-link:hover { background: #e8edf8; }
+
+/* Selected lot panel — sits between chart and list */
+.lot-selected-panel {
+  background: #eef2ff;
+  border: 1.5px solid #c0ccee;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  display: none;
+}
+.lot-selected-panel.visible {
+  display: block;
+  position: sticky;
+  top: 48px; /* updated dynamically by JS when chart is expanded */
+  z-index: 98;
+  box-shadow: 0 2px 12px rgba(30,50,160,0.10);
+  transition: top 0.28s ease;
+  background: #eef2ff; /* ensure it's opaque so list doesn't show through */
+}
+.lot-panel-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; border-bottom: 1px solid #d8e0f5;
+}
+.lot-panel-nav-label { font-size: 11px; color: #6070a0; }
+.lot-panel-nav-btns { display: flex; gap: 6px; align-items: center; }
+.lot-nav-btn {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1px solid #c0ccee; background: #fff;
+  cursor: pointer; font-size: 12px; color: #1a3a6e;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s;
+}
+.lot-nav-btn:hover:not(:disabled) { background: #1a3a6e; color: #fff; border-color: #1a3a6e; }
+.lot-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.lot-panel-close {
+  font-size: 11px; color: #6070a0; cursor: pointer;
+  padding: 3px 8px; border-radius: 4px; border: 1px solid #c0ccee;
+  background: #fff;
+}
+.lot-panel-close:hover { color: #1a3a6e; }
+.lot-panel-card { display: flex; gap: 14px; padding: 14px 16px; align-items: flex-start; }
+.lot-panel-img {
+  width: 64px; height: 64px; flex-shrink: 0;
+  background: #d8e0f5; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: #8898cc;
+}
+.lot-panel-body { flex: 1; min-width: 0; }
+.lot-panel-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; line-height: 1.3; }
+.lot-panel-auction { font-size: 11px; color: #6070a0; margin-bottom: 8px; }
+.lot-panel-fields { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.lot-panel-field label { display: block; font-size: 10px; color: #8898cc; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 1px; }
+.lot-panel-field span { font-size: 13px; font-weight: 500; color: #1a1a1a; }
+.lot-panel-link { font-size: 11px; color: #1e50a0; text-decoration: none; margin-left: auto; align-self: center; white-space: nowrap; flex-shrink: 0; }
+.hide-lot-btn { font-size: 11px; color: #c0392b; border: 1px solid #e8c0c0; border-radius: 4px; padding: 4px 10px; background: #fff8f8; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.hide-lot-btn:hover { background: #fee; border-color: #c0392b; }
+
+
+/* Filters bar */
+.filters-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 14px 0; margin-bottom: 0;
+}
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 13px; border: 1px solid #ddd; border-radius: 20px;
+  font-size: 12px; color: #444; background: #fff; cursor: pointer;
+  white-space: nowrap; transition: all 0.12s;
+}
+.filter-chip:hover { border-color: #999; }
+.filter-chip.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+.filter-chip .count { color: #888; font-size: 11px; }
+.filter-chip.active .count { color: #aaa; }
+.filter-all { display: inline-flex; align-items: center; gap: 6px; }
+.filter-all svg { opacity: 0.5; }
+.filter-sort {
+  margin-left: auto; font-size: 12px; color: #444;
+  background: none; border: none; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+}
+
+/* Dynamic metrics */
+.metrics-bar {
+  display: flex; gap: 0;
+  background: #fff; border-radius: 8px;
+  border: 1px solid #eee;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.metric {
+  flex: 1; padding: 12px 16px;
+  border-right: 1px solid #eee;
+}
+.metric:last-child { border-right: none; }
+.metric-label { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.metric-value { font-size: 15px; font-weight: 600; color: #1a1a1a; margin-bottom: 1px; }
+.metric-sub { font-size: 11px; color: #888; }
+.metric-bar-wrap { margin-top: 6px; }
+.metric-bar-track { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-bottom: 3px; }
+.metric-bar-above { background: #2a7a4a; }
+.metric-bar-within { background: #aaa; }
+.metric-bar-below { background: #c0392b; }
+.metric-bar-labels { display: flex; justify-content: space-between; font-size: 9px; color: #aaa; }
+
+/* Lot list */
+.lot-list { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.lot-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-bottom: 1px solid #f5f5f5; cursor: pointer; transition: background 0.15s; }
+.lot-row:last-child { border-bottom: none; }
+.lot-row:hover { background: #f9f9fb; }
+.lot-row.highlighted { background: #eef2ff; outline: 2px solid #1e50a0; outline-offset: -2px; }
+.lot-thumb { width: 44px; height: 44px; background: #e8e8e8; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #aaa; }
+.lot-info { flex: 1; min-width: 0; }
+.lot-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lot-meta { font-size: 11px; color: #888; }
+.lot-right { text-align: right; flex-shrink: 0; }
+.lot-status-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 3px; }
+.tag-sold { background: #e6f4ea; color: #2a7a4a; }
+.tag-unsold { background: #f0f0f0; color: #666; border: 1px solid #ddd; }
+.tag-upcoming { background: #dde8ff; color: #1e50a0; }
+.price-val { font-size: 13px; font-weight: 600; }
+.price-est { font-size: 11px; color: #888; }
+</style>
+</head>
+<body>
+
+<!-- Popover lives on body — never clipped -->
+<div class="dot-popover" id="dotPopover">
+  <button class="pop-close" id="popClose">✕</button>
+  <div class="pop-img">Lot image</div>
+  <div class="pop-body">
+    <div class="pop-row1">
+      <span class="pop-badge" id="popBadge"></span>
+      <span class="pop-year" id="popYear"></span>
+    </div>
+    <div class="pop-title" id="popTitle"></div>
+    <div class="pop-auction" id="popAuction"></div>
+    <div id="popPriceArea"></div>
+    <a class="pop-link" href="#" onclick="return false">View lot →</a>
+  </div>
+</div>
+
+<!-- Hover tooltip also on body -->
+<div class="chart-tooltip" id="chartTooltip"></div>
+
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between">
+  <div>
+    <h1>Repeat Sales Chart — Dev Reference</h1>
+    <p>Interactive prototype covering interactions, zoom, and edge cases.</p>
+  </div>
+  <button onclick="resetHidden()" style="font-size:12px;padding:7px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;color:#555;flex-shrink:0;margin-top:4px">Reset graph</button>
+</div>
+
+<div class="scenario-tabs" id="scenarioTabs"></div>
+<div id="scenarioMeta"></div>
+
+<div class="chart-collapse-header expanded" id="collapseHeader" onclick="toggleChartCollapse()">
+  <div class="chart-collapse-title">Repeated Sales Chart</div>
+  <span class="chart-collapse-chevron">▼</span>
+</div>
+<div class="chart-collapsible expanded" id="chartCollapsible">
+<div class="chart-wrapper">
+  <div id="estToggleSlot"></div>
+  <div id="yearPickerSlot"></div>
+  <div id="lastSaleSlot"></div>
+  <div class="chart-area" id="chartArea">
+    <svg id="mainChart" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <div id="zoomSlot"></div>
+  <div class="legend">
+    <div class="legend-item"><svg width="20" height="12"><circle cx="10" cy="6" r="5" fill="#1a3a6e"/></svg>Realized price</div>
+    <div class="legend-item"><svg width="20" height="12"><circle cx="10" cy="6" r="5" fill="none" stroke="#1a3a6e" stroke-width="1.5"/></svg>Unsold</div>
+    <div class="legend-item"><svg width="20" height="12"><circle cx="10" cy="6" r="5" fill="#888"/></svg>No result</div>
+    <div class="legend-item"><svg width="20" height="12"><circle cx="10" cy="6" r="5" fill="#1e7a4a"/></svg>Upcoming</div>
+    <div class="legend-item"><svg width="30" height="12"><rect x="0" y="2" width="30" height="8" fill="#1a3a6e" fill-opacity="0.08" stroke="#1a3a6e" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="3,2"/></svg>Estimate range</div>
+  </div>
+</div>
+</div>
+<div class="lot-selected-panel" id="lotPanel"></div>
+<div id="filtersSlot"></div>
+<div id="metricsSlot"></div>
+<div class="lot-list" id="lotList"></div>
+
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const SCENARIOS = {
+  normal: {
+    label: 'Normal (many sales)', showZoom: true, showYearPicker: true,
+    desc: '<strong>Zoom controller visible</strong> (>10 sales, >10yr span). Drag handles or the window on the timeline strip. Y-axis rescales to visible range. <strong>Click any dot</strong> for a popover with lot details. Hover for tooltip. Unsold/no-result dots are shown but skipped by the price line.',
+    data: [
+      { year:2005,    price:18000,  est:[14000,22000],  status:'sold',        title:'Early Composition, 1972',      auction:"Christie's NY" },
+      { year:2005.75, price:null,   est:[16000,24000],  status:'unsold',      title:'Study in Grey',                auction:"Sotheby's London" },
+      { year:2006,    price:22000,  est:[18000,28000],  status:'sold',        title:'Abstraction No. 1',            auction:'Phillips NY' },
+      { year:2007,    price:28000,  est:[22000,34000],  status:'sold',        title:'Blue Field I',                 auction:"Christie's London" },
+      { year:2007.5,  price:null,   est:[25000,38000],  status:'unavailable', title:'Work on Paper (no result)',    auction:'Bonhams' },
+      { year:2008,    price:25000,  est:[22000,32000],  status:'sold',        title:'Ochre and Black, 1975',        auction:"Sotheby's NY" },
+      { year:2009,    price:19000,  est:[18000,28000],  status:'sold',        title:'Small Format III',             auction:'Heritage Auctions' },
+      { year:2010,    price:null,   est:[20000,32000],  status:'unsold',      title:'Landscape Study',              auction:"Christie's NY" },
+      { year:2010.6,  price:31000,  est:[25000,38000],  status:'sold',        title:'Composition IV',               auction:"Sotheby's" },
+      { year:2011,    price:38000,  est:[30000,46000],  status:'sold',        title:'Red Ground',                   auction:'Phillips' },
+      { year:2012,    price:88000,  est:[60000,110000], status:'sold',        title:'Composition in Blue, 1978',    auction:"Christie's NY" },
+      { year:2012.8,  price:null,   est:[70000,95000],  status:'unsold',      title:'Blue Triptych (left)',         auction:"Sotheby's London" },
+      { year:2013,    price:45000,  est:[40000,60000],  status:'sold',        title:'Abstraction No. 3',            auction:"Sotheby's London" },
+      { year:2013.7,  price:null,   est:[30000,50000],  status:'unsold',      title:'Study for Landscape',          auction:'Phillips NY' },
+      { year:2014,    price:62000,  est:[50000,75000],  status:'sold',        title:'Red and Black Diptych',        auction:'Bonhams' },
+      { year:2014.5,  price:51000,  est:[44000,62000],  status:'sold',        title:'Vertical No. 2',               auction:"Christie's London" },
+      { year:2015,    price:55000,  est:[45000,70000],  status:'sold',        title:'Untitled (Large)',             auction:"Christie's London" },
+      { year:2015.8,  price:null,   est:[48000,68000],  status:'unavailable', title:'Dark Series I (no result)',    auction:"Sotheby's" },
+      { year:2016,    price:48000,  est:[40000,60000],  status:'sold',        title:'Blue Series IV',               auction:"Sotheby's NY" },
+      { year:2017,    price:52000,  est:[44000,64000],  status:'sold',        title:'Major Composition, 1980',      auction:'Phillips' },
+      { year:2017.6,  price:44000,  est:[38000,55000],  status:'sold',        title:'Untitled (Medium)',            auction:'Bonhams' },
+      { year:2018,    price:null,   est:[50000,70000],  status:'unsold',      title:'Grey and Ochre Study',         auction:"Christie's NY" },
+      { year:2019,    price:21000,  est:[25000,40000],  status:'sold',        title:'Small Composition',            auction:'Heritage Auctions' },
+      { year:2019.5,  price:58000,  est:[48000,70000],  status:'sold',        title:'Field Painting No. 5',        auction:"Sotheby's" },
+      { year:2020,    price:61000,  est:[50000,74000],  status:'sold',        title:'Abstract No. 7',               auction:"Christie's NY" },
+      { year:2020.7,  price:null,   est:[55000,75000],  status:'unsold',      title:'Dark Composition',             auction:'Phillips' },
+      { year:2021,    price:null,   est:[45000,65000],  status:'unsold',      title:'Study II',                     auction:"Sotheby's London" },
+      { year:2021.5,  price:52000,  est:[40000,60000],  status:'sold',        title:'The Black Series',             auction:'Phillips' },
+      { year:2022,    price:63000,  est:[55000,80000],  status:'sold',        title:'Major Work, 1981',             auction:"Christie's NY" },
+      { year:2022.5,  price:71000,  est:[60000,85000],  status:'sold',        title:'Composition VII',              auction:"Sotheby's" },
+      { year:2023,    price:70000,  est:[60000,85000],  status:'sold',        title:'Composition VIII',             auction:"Sotheby's" },
+      { year:2023.4,  price:null,   est:[65000,90000],  status:'unsold',      title:'Late Work (unsold)',            auction:'Bonhams' },
+      { year:2024,    price:230000, est:[80000,120000], status:'sold',        title:'Landmark Piece, 1975',         auction:"Christie's NY" },
+      { year:2024.6,  price:68000,  est:[60000,90000],  status:'sold',        title:'Blue III',                     auction:'Bonhams' },
+      { year:2025.2,  price:74000,  est:[65000,92000],  status:'sold',        title:'Recent Work, 2024',            auction:"Christie's NY" },
+      { year:2025.75, price:null,   est:[70000,100000], status:'unsold',      title:'Untitled Study (unsold)',       auction:"Sotheby's" },
+      { year:2026.5,  price:null,   est:[90000,130000], status:'upcoming',    title:'Untitled, 1980',               auction:'Phillips NY' },
+    ]
+  },
+  fewsales: {
+    label: 'Few sales', showZoom: false, showYearPicker: false, noLine: true,
+    desc: '<strong>No zoom, no year picker</strong> (fewer than 10 sales). Dots are larger. Full timeline shown.',
+    data: [
+      { year:2020, price:12000, est:[10000,15000], status:'sold',   title:'Small Work I',   auction:"Christie's" },
+      { year:2021, price:null,  est:[12000,18000], status:'unsold', title:'Small Work II',  auction:"Sotheby's" },
+      { year:2022, price:18000, est:[14000,22000], status:'sold',   title:'Small Work III', auction:'Phillips' },
+      { year:2023, price:22000, est:[18000,28000], status:'sold',   title:'Small Work IV',  auction:'Bonhams' },
+    ]
+  },
+  oldsale: {
+    label: 'Last sale 6+ yrs ago', showZoom: false, showYearPicker: false, lastSaleYear: 2018,
+    desc: '<strong>"Last sale – 2018" indicator</strong> shown because most recent sale was >5 years ago. Timeline extends to present with empty right zone.',
+    data: [
+      { year:2010, price:34000, est:[28000,42000], status:'sold',   title:'Early Work',       auction:"Christie's" },
+      { year:2012, price:41000, est:[35000,50000], status:'sold',   title:'Mid Period I',     auction:"Sotheby's" },
+      { year:2015, price:38000, est:[32000,48000], status:'sold',   title:'Mid Period II',    auction:'Phillips' },
+      { year:2016, price:null,  est:[40000,55000], status:'unsold', title:'Unsold Lot',       auction:'Bonhams' },
+      { year:2018, price:52000, est:[44000,62000], status:'sold',   title:'Final Sale Piece', auction:"Christie's" },
+    ]
+  },
+  multidate: {
+    label: 'Multiple on same date', showZoom: true, showYearPicker: true,
+    desc: '<strong>Same-date lots — dev note:</strong> when multiple lots share the same sale date, each is plotted individually at its own Y (realized price or estimate midpoint), stacked vertically at the same X. A vertical connector line and count badge mark the cluster. Each dot is independently clickable. The <em>price line</em> passes through the cluster at the average realized price of sold lots in it — this is an approximation for continuity, not a real data point. The <em>estimate band</em> at that date spans from the lowest min to the highest max across all lots in the cluster.',
+    data: [
+      { year:2012,  price:18000, est:[14000,22000], status:'sold',   title:'Early Work I',                 auction:"Christie's" },
+      { year:2013,  price:22000, est:[18000,28000], status:'sold',   title:'Early Work II',                auction:"Sotheby's" },
+      { year:2014,  price:null,  est:[20000,30000], status:'unsold', title:'Study (unsold)',                auction:'Phillips' },
+      { year:2015,  price:31000, est:[26000,38000], status:'sold',   title:'Mid Work',                     auction:'Bonhams' },
+      { year:2016,  price:27000, est:[22000,34000], status:'sold',   title:'Blue Painting',                auction:"Christie's" },
+      { year:2017,  price:35000, est:[28000,42000], status:'sold',   title:'Solo Sale 2017',               auction:"Sotheby's" },
+      { year:2019,  price:22000, est:[18000,28000], status:'sold',   title:'Work A',                       auction:"Christie's Nov 2019" },
+      { year:2019,  price:31000, est:[25000,38000], status:'sold',   title:'Work B (same auction)',        auction:"Christie's Nov 2019" },
+      { year:2019,  price:null,  est:[20000,30000], status:'unsold', title:'Work C (same auction)',        auction:"Christie's Nov 2019" },
+      { year:2021,  price:45000, est:[38000,55000], status:'sold',   title:'Solo Sale 2021',               auction:"Sotheby's" },
+      { year:2022,  price:38000, est:[30000,48000], status:'sold',   title:'Another Lot',                  auction:'Phillips' },
+      { year:2023,  price:28000, est:[24000,35000], status:'sold',   title:'Recent Work A',                auction:'Bonhams Jun 2023' },
+      { year:2023,  price:35000, est:[28000,42000], status:'sold',   title:'Recent Work B',                auction:'Bonhams Jun 2023' },
+      { year:2023,  price:19000, est:[16000,24000], status:'sold',   title:'Recent Work C (same auction)', auction:'Bonhams Jun 2023' },
+      { year:2024,  price:42000, est:[36000,52000], status:'sold',   title:'Latest Work',                  auction:"Christie's" },
+    ]
+  },
+  outlier: {
+    label: 'Extreme outlier', showZoom: true, showYearPicker: true,
+    desc: '<strong>Outlier handling:</strong> when one result is more than 4× the median, the Y-axis automatically breaks into two zones — normal data below, outlier above a visible gap. The break marker on the Y-axis signals the discontinuity. Click the outlier dot and use <strong>Hide from chart</strong> to remove it — the Y-axis will rescale to the remaining data.',
+    data: [
+      { year:2012, price:15000,  est:[12000,19000], status:'sold',   title:'Early Work A',                      auction:"Christie's" },
+      { year:2013, price:18000,  est:[14000,22000], status:'sold',   title:'Early Work B',                      auction:"Sotheby's" },
+      { year:2014, price:null,   est:[16000,24000], status:'unsold', title:'Study (unsold)',                     auction:'Phillips' },
+      { year:2015, price:21000,  est:[17000,26000], status:'sold',   title:'Work C',                            auction:'Bonhams' },
+      { year:2016, price:19000,  est:[15000,24000], status:'sold',   title:'Work D',                            auction:"Christie's" },
+      { year:2017, price:17000,  est:[14000,21000], status:'sold',   title:'Work E',                            auction:"Sotheby's" },
+      { year:2018, price:18000,  est:[14000,22000], status:'sold',   title:'Work F',                            auction:"Christie's" },
+      { year:2019, price:22000,  est:[18000,28000], status:'sold',   title:'Work G',                            auction:"Sotheby's" },
+      { year:2020, price:19000,  est:[16000,24000], status:'sold',   title:'Work H',                            auction:'Phillips' },
+      { year:2021, price:240000, est:[30000,50000],  status:'sold',  title:'Record Piece — exceptional result', auction:"Christie's NY" },
+      { year:2022, price:21000,  est:[18000,26000], status:'sold',   title:'Work I',                            auction:'Bonhams' },
+      { year:2023, price:25000,  est:[20000,32000], status:'sold',   title:'Work J',                            auction:'Phillips' },
+      { year:2024, price:28000,  est:[22000,35000], status:'sold',   title:'Work K',                            auction:"Sotheby's" },
+    ]
+  },
+  bottomdots: {
+    label: 'Dots at baseline', showZoom: false, showYearPicker: false,
+    desc: '<strong>Dots near the X-axis:</strong> unsold and no-result lots with no estimate sit at the chart floor. Dots must stay fully visible — never clipped in half. The rendering keeps a minimum Y so the full circle always shows above the axis line.',
+    data: [
+      { year:2018, price:32000, est:[26000,40000], status:'sold',        title:'Normal Sale',            auction:"Christie's" },
+      { year:2019, price:null,  est:null,           status:'unavailable', title:'No estimate, no result', auction:"Sotheby's" },
+      { year:2020, price:null,  est:null,           status:'unsold',      title:'Unsold, no estimate',    auction:'Phillips' },
+      { year:2021, price:38000, est:[30000,48000], status:'sold',        title:'Another Sale',           auction:'Bonhams' },
+      { year:2022, price:null,  est:null,           status:'unavailable', title:'No data at all',         auction:"Christie's" },
+      { year:2023, price:null,  est:[8000,12000],  status:'unsold',      title:'Low estimate, unsold',   auction:"Sotheby's" },
+      { year:2024, price:41000, est:[34000,50000], status:'sold',        title:'Recent Sale',            auction:'Phillips' },
+    ]
+  },
+  empty: {
+    label: 'Empty range', showZoom: true, showYearPicker: true,
+    desc: '<strong>Empty state:</strong> zoom pre-set to a gap. Shows empty state with "View all years" CTA.',
+    data: [
+      { year:2010, price:34000, est:[28000,42000], status:'sold', title:'Early Work I',  auction:"Christie's" },
+      { year:2011, price:29000, est:[24000,36000], status:'sold', title:'Early Work II', auction:"Sotheby's" },
+      { year:2024, price:48000, est:[40000,58000], status:'sold', title:'Recent Work',   auction:'Phillips' },
+    ]
+  }
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let activeKey  = 'normal';
+let zoomRange  = [0, 1];
+let zoomDrag   = null;
+let showEstimate = true;
+let selectedLotIdx = null; // index into current visible lots array
+let hiddenLots = new Set(); // titles of lots hidden from chart
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const fmtP = p => p >= 1e6 ? `$${(p/1e6).toFixed(1)}M` : p >= 1000 ? `$${Math.round(p/1000)}K` : `$${p}`;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function getBounds(s) {
+  const years = s.data.map(d => d.year);
+  const minYear = Math.min(...years);
+  const maxYear = Math.max(Math.max(...years), new Date().getFullYear() + 0.5);
+  return { minYear, maxYear, span: maxYear - minYear };
+}
+
+// ─── Chart render ─────────────────────────────────────────────────────────────
+function renderChart() {
+  const s = SCENARIOS[activeKey];
+  const { minYear, maxYear, span } = getBounds(s);
+  const visMin = minYear + zoomRange[0] * span;
+  const visMax = minYear + zoomRange[1] * span;
+  const visSpan = visMax - visMin;
+
+  const visData  = s.data.filter(d => d.year >= visMin - 0.01 && d.year <= visMax + 0.01 && !hiddenLots.has(d.title));
+  const fullData = s.data.filter(d => !hiddenLots.has(d.title));
+
+  // Y scale — true linear scale, no manipulation
+  const visPrices = visData.filter(d => d.price).map(d => d.price);
+  const visEsts   = visData.flatMap(d => d.est || []);
+  const allPrices = s.data.filter(d => d.price && !hiddenLots.has(d.title)).map(d => d.price);
+  const allEsts   = s.data.filter(d => !hiddenLots.has(d.title)).flatMap(d => d.est || []);
+  const pricesForScale = visPrices.length ? visPrices : allPrices;
+  const estsForScale   = visEsts.length   ? visEsts   : allEsts;
+  const rawMax = Math.max(...pricesForScale, ...estsForScale, 1);
+  const yMax = rawMax * 1.18;
+  const yMin = 0;
+
+  const W=800, H=200, P={top:18,right:16,bottom:28,left:62};
+  const CW = W-P.left-P.right, CH = H-P.top-P.bottom;
+
+  const yS = v => P.top + CH - Math.max(0, Math.min(1, v / yMax)) * CH;
+
+  // Add horizontal padding so dots at the edges are never clipped
+  const X_PAD = 0.04;
+  const xPadAmt = (visMax - visMin) * X_PAD;
+  const xMin = visMin - xPadAmt, xMax = visMax + xPadAmt;
+  const xS = y => P.left + ((y - xMin) / (xMax - xMin)) * CW;
+
+  // Y ticks
+  const yTicks = [0, .25, .5, .75, 1].map(t => t * yMax);
+  let yAxisSVG = yTicks.map(v =>
+    `<line x1="${P.left}" y1="${yS(v).toFixed(1)}" x2="${P.left+CW}" y2="${yS(v).toFixed(1)}" stroke="#eee" stroke-width="1" stroke-dasharray="3,4"/>
+     <text x="${P.left-5}" y="${(yS(v)+3.5).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#b0b0b0">${fmtP(v)}</text>`
+  ).join('');
+
+
+  // X ticks — months if ≤2yr span
+  let xItems = [];
+  if (visSpan <= 2) {
+    const step = visSpan <= 1 ? 1 : 2;
+    for (let y = Math.floor(visMin); y <= Math.ceil(visMax)+1; y++) {
+      for (let m = 0; m < 12; m += step) {
+        const frac = y + m/12;
+        if (frac < visMin-0.04 || frac > visMax+0.04) continue;
+        xItems.push({ v: frac, label: m===0 ? `${MONTHS[m]} ${y}` : MONTHS[m], major: m===0 });
+      }
+    }
+  } else {
+    const raw = [];
+    for (let y = Math.ceil(visMin); y <= Math.floor(visMax); y++) raw.push(y);
+    const step = Math.max(1, Math.ceil(raw.length/7));
+    raw.filter((_,i) => i%step===0).forEach(y => xItems.push({ v:y, label:String(y), major:true }));
+  }
+  const xAxisSVG = xItems.map(t =>
+    `<text x="${xS(t.v).toFixed(1)}" y="${P.top+CH+14}" text-anchor="middle" font-size="8.5" fill="${t.major?'#888':'#bbb'}" ${t.major?'font-weight="600"':''}>${t.label}</text>`
+  ).join('');
+
+  // Estimate band — per date cluster: min of all mins, max of all maxes
+  const fullGrouped = {};
+  fullData.forEach(d => { if (!fullGrouped[d.year]) fullGrouped[d.year]=[]; fullGrouped[d.year].push(d); });
+  const bandPts = Object.entries(fullGrouped)
+    .map(([yr, items]) => {
+      const withEst = items.filter(d => d.est);
+      if (!withEst.length) return null;
+      return { year: parseFloat(yr), est: [Math.min(...withEst.map(d=>d.est[0])), Math.max(...withEst.map(d=>d.est[1]))] };
+    }).filter(Boolean).sort((a,b)=>a.year-b.year);
+  let bandSVG = '';
+  if (showEstimate && bandPts.length >= 2) {
+    const top = bandPts.map(d => `${xS(d.year).toFixed(1)},${yS(d.est[1]).toFixed(1)}`);
+    const bot = [...bandPts].reverse().map(d => `${xS(d.year).toFixed(1)},${yS(d.est[0]).toFixed(1)}`);
+    bandSVG = `<path d="M ${top.join(' L ')} L ${bot.join(' L ')} Z" fill="#1a3a6e" fill-opacity="0.07" clip-path="url(#cc)"/>`;
+  }
+
+  // Price line — one point per date (avg of sold prices in cluster), skips unsold/upcoming
+  // Price line — one point per date cluster, avg of sold prices
+  // Only breaks at upcoming lots — unsold-only clusters are simply skipped (no break)
+  const lineGrouped = {};
+  fullData.forEach(d => { if (!lineGrouped[d.year]) lineGrouped[d.year]=[]; lineGrouped[d.year].push(d); });
+  const linePoints = Object.entries(lineGrouped)
+    .sort((a,b) => parseFloat(a[0]) - parseFloat(b[0]))
+    .map(([yr, items]) => {
+      const hasUpcoming = items.some(d => d.status === 'upcoming');
+      if (hasUpcoming) return { year: parseFloat(yr), upcoming: true };
+      const sold = items.filter(d => d.price !== null);
+      if (!sold.length) return { year: parseFloat(yr), skip: true }; // unsold only — skip but don't break
+      const avg = sold.reduce((sum,d) => sum + d.price, 0) / sold.length;
+      return { year: parseFloat(yr), price: avg };
+    });
+
+  let lineSegs = [], cur = [];
+  if (!s.noLine) {
+    linePoints.forEach(p => {
+      if (p.upcoming) { if (cur.length) lineSegs.push(cur); cur = []; } // hard break
+      else if (p.skip) { /* skip silently, line continues to next sold point */ }
+      else {
+        let v = p.price;
+        cur.push(`${xS(p.year).toFixed(1)},${yS(v).toFixed(1)}`);
+      }
+    });
+  }
+  if (!s.noLine && cur.length) lineSegs.push(cur);
+  const lineSVG = lineSegs.filter(s => s.length >= 2).map(pts =>
+    `<polyline points="${pts.join(' ')}" fill="none" stroke="#1a3a6e" stroke-width="1.5" clip-path="url(#cc)"/>`
+  ).join('');
+
+  // Dots — only visible data
+  // Same-date lots are COLLAPSED into one dot — click opens a multi-lot popover
+  const grouped = {};
+  visData.forEach(d => { if (!grouped[d.year]) grouped[d.year]=[]; grouped[d.year].push(d); });
+  const DOT_R = (s.dotScale||1) * 2.5;
+  let dotsSVG = '';
+  const enc = str => str.replace(/"/g,'&quot;');
+
+  Object.values(grouped).forEach(items => {
+    const isMulti = items.length > 1;
+    // For multi-date: spread dots vertically at same X, connected by a vertical bracket line
+    // Line uses average price of sold items in the cluster
+    const baseCx = xS(items[0].year);
+
+    if (isMulti) {
+      // Sort by value so they stack neatly
+      const sorted = [...items].sort((a,b) => {
+        const va = a.price !== null ? a.price : (a.est ? (a.est[0]+a.est[1])/2 : 0);
+        const vb = b.price !== null ? b.price : (b.est ? (b.est[0]+b.est[1])/2 : 0);
+        return va - vb;
+      });
+
+      // Draw vertical bracket line connecting all dots in cluster
+      const cys = sorted.map(d => {
+        const v = d.price !== null ? d.price : (d.est ? (d.est[0]+d.est[1])/2 : 0);
+        return Math.max(P.top+DOT_R, Math.min(P.top+CH-DOT_R, yS(v)));
+      });
+      const minCy = Math.min(...cys), maxCy = Math.max(...cys);
+      if (maxCy - minCy > DOT_R * 2) {
+        dotsSVG += `<line x1="${baseCx.toFixed(1)}" y1="${minCy.toFixed(1)}" x2="${baseCx.toFixed(1)}" y2="${maxCy.toFixed(1)}" stroke="#c0ccee" stroke-width="1.5" pointer-events="none" clip-path="url(#cc)"/>`;
+      }
+
+      sorted.forEach((d) => {
+        let v = d.price !== null ? d.price : (d.est ? (d.est[0]+d.est[1])/2 : 0);
+        const cx = baseCx.toFixed(1);
+        const cy = Math.max(P.top+DOT_R, Math.min(P.top+CH-DOT_R, yS(v))).toFixed(1);
+        let fill='#1a3a6e', stroke='#1a3a6e';
+        if (d.status==='unsold')      { fill='#fff'; }
+        if (d.status==='upcoming')    { fill='#1e7a4a'; stroke='#1e7a4a'; }
+        if (d.status==='unavailable') { fill='#888'; stroke='#888'; }
+        const isSelected = selectedLotIdx !== null && getVisibleLots()[selectedLotIdx]?.title === d.title;
+        const selRing = isSelected ? `<circle cx="${cx}" cy="${cy}" r="${DOT_R+3.5}" fill="none" stroke="#1a3a6e" stroke-width="1.5" opacity="0.4" pointer-events="none"/>` : '';
+        dotsSVG += selRing + `<circle class="pdot" cx="${cx}" cy="${cy}" r="${DOT_R}"
+          fill="${fill}" stroke="${stroke}" stroke-width="${isSelected?2:1.5}" style="cursor:pointer"
+          data-title="${enc(d.title)}" data-auction="${enc(d.auction)}"
+          data-price="${d.price}" data-status="${d.status}"
+          data-year="${Math.floor(d.year)}" data-est="${d.est||''}"
+          data-cx="${cx}" data-cy="${cy}"/>`;
+      });
+
+      // Count badge at top of cluster
+      dotsSVG += `<rect x="${baseCx+DOT_R+1}" y="${minCy-8}" width="16" height="12" rx="3" fill="#e8e0ff" clip-path="url(#cc)"/>`;
+      dotsSVG += `<text x="${baseCx+DOT_R+9}" y="${minCy+0.5}" text-anchor="middle" font-size="7.5" fill="#5b3fa0" font-weight="700" clip-path="url(#cc)">${items.length}</text>`;
+
+    } else {
+      // Single dot
+      const d = items[0];
+      let v = d.price !== null ? d.price : (d.est ? (d.est[0]+d.est[1])/2 : 0);
+      const isFloorDot = d.price === null && !d.est;
+      const cx = baseCx.toFixed(1);
+      const floorPad = isFloorDot ? DOT_R + 2 : DOT_R;
+      const cy = Math.max(P.top+DOT_R, Math.min(P.top+CH-floorPad, yS(v))).toFixed(1);
+      let fill='#1a3a6e', stroke='#1a3a6e';
+      if (d.status==='unsold')      { fill='#fff'; }
+      if (d.status==='upcoming')    { fill='#1e7a4a'; stroke='#1e7a4a'; }
+      if (d.status==='unavailable') { fill='#888'; stroke='#888'; }
+      const isSelected = selectedLotIdx !== null && getVisibleLots()[selectedLotIdx]?.title === d.title;
+      const selRing = isSelected ? `<circle cx="${cx}" cy="${cy}" r="${DOT_R+3.5}" fill="none" stroke="#1a3a6e" stroke-width="1.5" opacity="0.4" pointer-events="none"/>` : '';
+      dotsSVG += selRing + `<circle class="pdot" cx="${cx}" cy="${cy}" r="${DOT_R}"
+        fill="${fill}" stroke="${stroke}" stroke-width="${isSelected?2:1.5}" style="cursor:pointer"
+        data-title="${enc(d.title)}" data-auction="${enc(d.auction)}"
+        data-price="${d.price}" data-status="${d.status}"
+        data-year="${Math.floor(d.year)}" data-est="${d.est||''}"
+        data-cx="${cx}" data-cy="${cy}"/>`;
+    }
+  });
+  let hiddenSVG = "";
+
+  // Last sale line
+  let lastSVG = '';
+  if (s.lastSaleYear) {
+    const lx = xS(s.lastSaleYear).toFixed(1);
+    lastSVG = `<line x1="${lx}" y1="${P.top}" x2="${lx}" y2="${P.top+CH}" stroke="#ccc" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="${parseFloat(lx)-28}" y="${P.top-14}" width="56" height="12" rx="2" fill="#f2f2f2"/>
+      <text x="${lx}" y="${P.top-5}" text-anchor="middle" font-size="7.5" fill="#999">Last sale ${s.lastSaleYear}</text>`;
+  }
+
+  const isEmpty = visData.length === 0;
+  const chartArea = document.getElementById('chartArea');
+
+  if (isEmpty) {
+    chartArea.innerHTML = `<div class="empty-state">
+      <p>No auction appearances in this period</p>
+      <button class="empty-cta" onclick="resetZoom()">View all years</button>
+    </div>`;
+    return;
+  }
+
+  // Ensure svg exists
+  if (!chartArea.querySelector('svg')) {
+    chartArea.innerHTML = `<svg id="mainChart" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>`;
+  }
+  document.getElementById('mainChart').innerHTML = `
+    <defs><clipPath id="cc"><rect x="${P.left}" y="${P.top}" width="${CW}" height="${CH}"/></clipPath></defs>
+    ${yAxisSVG}${xAxisSVG}
+    ${bandSVG}${lineSVG}
+    <g clip-path="url(#cc)">${dotsSVG}</g>
+    ${lastSVG}${hiddenSVG}
+    <line id="guideLine" x1="0" y1="${P.top}" x2="0" y2="${P.top+CH}" stroke="#1a3a6e" stroke-width="1" stroke-dasharray="3,3" opacity="0" pointer-events="none"/>
+  `;
+  attachDotEvents();
+  attachWheelZoom();
+  renderHiddenBanner();
+}
+
+// ─── Dot events ───────────────────────────────────────────────────────────────
+function attachDotEvents() {
+  const tooltip = document.getElementById('chartTooltip');
+  const guide   = document.getElementById('guideLine');
+
+  document.querySelectorAll('.pdot').forEach(dot => {
+    // Hover
+    dot.addEventListener('mouseenter', function(e) {
+      this.setAttribute('r', parseFloat(this.getAttribute('r')) * 1.5);
+      if (guide) { guide.setAttribute('x1', this.dataset.cx); guide.setAttribute('x2', this.dataset.cx); guide.setAttribute('opacity','1'); }
+
+      {
+        const price  = this.dataset.price !== 'null' ? Number(this.dataset.price) : null;
+        const est    = this.dataset.est ? this.dataset.est.split(',').map(Number) : null;
+        const status = this.dataset.status;
+        const bc     = {sold:'sold',unsold:'unsold',upcoming:'upcoming',unavailable:'unavailable'}[status]||'sold';
+        const bl     = {sold:'Sold',unsold:'Unsold',upcoming:'Upcoming',unavailable:'No result'}[status];
+        tooltip.innerHTML = `
+          <div class="tt-price">${price ? fmtP(price) : (est ? `est. ${fmtP(est[0])}–${fmtP(est[1])}` : '—')}</div>
+          <div class="tt-meta">${this.dataset.auction} · ${this.dataset.year}</div>
+          <span class="tt-badge ${bc}">${bl}</span>`;
+      }
+      tooltip.classList.add('show');
+      moveTooltip(e);
+    });
+    dot.addEventListener('mousemove', moveTooltip);
+    dot.addEventListener('mouseleave', function() {
+      this.setAttribute('r', parseFloat(this.getAttribute('r')) / 1.5);
+      tooltip.classList.remove('show');
+      if (guide) guide.setAttribute('opacity','0');
+    });
+
+    // Click — select lot, show detail card below
+    dot.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const title = this.dataset.title;
+      const lots  = getVisibleLots();
+      const idx   = lots.findIndex(d => d.title === title);
+      if (idx !== -1) selectLot(idx);
+    });
+  });
+
+  function moveTooltip(e) {
+    const t = document.getElementById('chartTooltip');
+    // Position above the dot using the dot's SVG coordinates
+    const dot = e.target.closest('.pdot');
+    if (dot && dot.dataset.cx && dot.dataset.cy) {
+      const svgEl  = document.getElementById('mainChart');
+      const svgRect = svgEl.getBoundingClientRect();
+      const scaleX  = svgRect.width  / 800;
+      const scaleY  = svgRect.height / 200;
+      const dotScreenX = svgRect.left + parseFloat(dot.dataset.cx) * scaleX;
+      const dotScreenY = svgRect.top  + parseFloat(dot.dataset.cy) * scaleY;
+      const tw = 170, th = 80;
+      let x = dotScreenX - tw / 2;
+      let y = dotScreenY - th - 12;
+      // Flip below if too close to top
+      if (y < 8) y = dotScreenY + 12;
+      // Clamp horizontally
+      x = Math.max(8, Math.min(x, window.innerWidth - tw - 8));
+      t.style.left = x + 'px';
+      t.style.top  = y + 'px';
+    } else {
+      // Fallback to cursor position
+      let x = e.clientX - 85, y = e.clientY - 80;
+      if (y < 8) y = e.clientY + 12;
+      x = Math.max(8, Math.min(x, window.innerWidth - 170 - 8));
+      t.style.left = x + 'px';
+      t.style.top  = y + 'px';
+    }
+  }
+}
+
+// ─── Popover ──────────────────────────────────────────────────────────────────
+function positionPopover(dot) {
+  const pop = document.getElementById('dotPopover');
+  pop.classList.remove('show');
+  pop.style.display   = 'block';
+  pop.style.opacity   = '0';
+  pop.style.transform = 'none';
+  pop.style.left = '-9999px';
+  pop.style.top  = '0px';
+  const pw = pop.offsetWidth  || 220;
+  const ph = pop.offsetHeight || 280;
+  const svgEl   = document.getElementById('mainChart');
+  if (!svgEl) return;
+  const svgRect = svgEl.getBoundingClientRect();
+  const scaleX  = svgRect.width  / 800;
+  const scaleY  = svgRect.height / 200;
+  const dotScreenX = svgRect.left + parseFloat(dot.dataset.cx) * scaleX;
+  const dotScreenY = svgRect.top  + parseFloat(dot.dataset.cy) * scaleY;
+  let left = dotScreenX - pw/2;
+  let top  = dotScreenY - ph - 14;
+  if (top  < 8)                        top  = dotScreenY + 14;
+  if (left < 8)                        left = 8;
+  if (left + pw > window.innerWidth-8) left = window.innerWidth - pw - 8;
+  pop.style.left = left + 'px';
+  pop.style.top  = top  + 'px';
+  pop.style.transform = '';
+  pop.style.opacity   = '';
+  pop.classList.add('show');
+}
+
+function showPopoverMulti(dot) {
+  const pop   = document.getElementById('dotPopover');
+  const items = JSON.parse(dot.dataset.multi);
+  const year  = dot.dataset.year;
+  const auctionName = items[0].auction;
+
+  const rowsHTML = items.map(d => {
+    const price  = d.price !== null ? `<strong>${fmtP(d.price)}</strong>` : `<span style="color:#aaa">Not sold</span>`;
+    const estStr = d.est ? `<span style="color:#aaa;font-size:10px">est. ${fmtP(d.est[0])}–${fmtP(d.est[1])}</span>` : '';
+    const bc = {sold:'sold',unsold:'unsold',upcoming:'upcoming',unavailable:'unavailable'}[d.status]||'sold';
+    const bl = {sold:'Sold',unsold:'Unsold',upcoming:'Upcoming',unavailable:'No result'}[d.status];
+    return `<div style="padding:8px 0;border-bottom:1px solid #f5f5f5;display:flex;align-items:flex-start;gap:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.title}</div>
+        <span class="pop-badge ${bc}" style="font-size:9px">${bl}</span>
+      </div>
+      <div style="text-align:right;flex-shrink:0;font-size:12px">${price}<br>${estStr}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('popBadge').className  = 'pop-badge unavailable';
+  document.getElementById('popBadge').textContent = `${items.length} lots`;
+  document.getElementById('popYear').textContent  = year;
+  document.getElementById('popTitle').textContent  = auctionName;
+  document.getElementById('popAuction').textContent = '';
+  document.getElementById('popPriceArea').innerHTML = `
+    <div style="margin-bottom:10px;max-height:180px;overflow-y:auto">${rowsHTML}</div>`;
+
+  positionPopover(dot);
+}
+
+function showPopover(dot) {
+  const pop      = document.getElementById('dotPopover');
+  const price    = dot.dataset.price !== 'null' ? Number(dot.dataset.price) : null;
+  const est      = dot.dataset.est ? dot.dataset.est.split(',').map(Number) : null;
+  const status   = dot.dataset.status;
+  const badgeMap = { sold:'Sold', unsold:'Unsold', upcoming:'Upcoming', unavailable:'No result' };
+
+  document.getElementById('popBadge').className  = `pop-badge ${status}`;
+  document.getElementById('popBadge').textContent = badgeMap[status] || status;
+  document.getElementById('popYear').textContent  = dot.dataset.year;
+  document.getElementById('popTitle').textContent  = dot.dataset.title;
+  document.getElementById('popAuction').textContent = dot.dataset.auction;
+
+  const pa = document.getElementById('popPriceArea');
+  if (price) {
+    pa.innerHTML = `<div class="pop-price">${fmtP(price)}</div>${est ? `<div class="pop-est">est. ${fmtP(est[0])} – ${fmtP(est[1])}</div>` : '<div class="pop-est" style="margin-bottom:12px"></div>'}`;
+  } else {
+    pa.innerHTML = `<div class="pop-nosale">Not sold</div>${est ? `<div class="pop-est">est. ${fmtP(est[0])} – ${fmtP(est[1])}</div>` : '<div class="pop-est" style="margin-bottom:12px"></div>'}`;
+  }
+
+  positionPopover(dot);
+}
+
+function closePopover() {
+  document.getElementById('dotPopover').classList.remove('show');
+}
+
+document.getElementById('popClose').addEventListener('click', e => { e.stopPropagation(); closePopover(); });
+document.addEventListener('click', e => {
+  const pop = document.getElementById('dotPopover');
+  if (pop.classList.contains('show') && !pop.contains(e.target)) closePopover();
+});
+
+// ─── Zoom ─────────────────────────────────────────────────────────────────────
+function renderZoom() {
+  const s = SCENARIOS[activeKey];
+  if (!s.showZoom) { document.getElementById('zoomSlot').innerHTML=''; return; }
+  const { minYear, maxYear } = getBounds(s);
+  const prices = s.data.filter(d=>d.price).map(d=>d.price);
+  const maxP = Math.max(...prices);
+  const pts = s.data.filter(d=>d.price).map(d => {
+    const mx = ((d.year-minYear)/(maxYear-minYear)*100).toFixed(1);
+    const my = (28-(d.price/maxP)*22).toFixed(1);
+    return `${mx},${my}`;
+  }).join(' ');
+
+  const [l,r] = zoomRange;
+  document.getElementById('zoomSlot').innerHTML = `
+    <div class="zoom-section">
+      <div class="zoom-label">Timeline zoom — drag handles or window</div>
+      <div class="zoom-track" id="zoomTrack">
+        <svg class="zoom-mini-svg" viewBox="0 0 100 28" preserveAspectRatio="xMidYMid meet">
+          <polyline points="${pts}" fill="none" stroke="#1a3a6e" stroke-width="0.9" opacity="0.4"/>
+        </svg>
+        <div class="zoom-shade left"  id="shadeL" style="width:${(l*100).toFixed(2)}%"></div>
+        <div class="zoom-shade right" id="shadeR" style="width:${((1-r)*100).toFixed(2)}%"></div>
+        <div class="zoom-sel" id="zoomSel" style="left:${(l*100).toFixed(2)}%;width:${((r-l)*100).toFixed(2)}%">
+          <div class="zoom-handle left"  id="handleL"></div>
+          <div class="zoom-handle right" id="handleR"></div>
+        </div>
+      </div>
+    </div>`;
+  attachZoomEvents();
+}
+
+function updateZoomUI() {
+  const [l,r] = zoomRange;
+  const sel = document.getElementById('zoomSel');
+  const shL = document.getElementById('shadeL');
+  const shR = document.getElementById('shadeR');
+  if (!sel) return;
+  sel.style.left  = (l*100).toFixed(2)+'%';
+  sel.style.width = ((r-l)*100).toFixed(2)+'%';
+  shL.style.width = (l*100).toFixed(2)+'%';
+  shR.style.width = ((1-r)*100).toFixed(2)+'%';
+}
+
+function attachZoomEvents() {
+  const track = document.getElementById('zoomTrack');
+  const sel   = document.getElementById('zoomSel');
+  const hL    = document.getElementById('handleL');
+  const hR    = document.getElementById('handleR');
+  if (!track) return;
+  const rx = e => { const r=track.getBoundingClientRect(); const cx=e.touches?e.touches[0].clientX:e.clientX; return Math.max(0,Math.min(1,(cx-r.left)/r.width)); };
+  const start = (type,e) => { e.preventDefault(); e.stopPropagation(); zoomDrag={type, startX:rx(e), startRange:[...zoomRange]}; };
+  hL.addEventListener('mousedown',  e=>start('left',e));
+  hR.addEventListener('mousedown',  e=>start('right',e));
+  sel.addEventListener('mousedown', e=>start('sel',e));
+  hL.addEventListener('touchstart',  e=>start('left',e),{passive:false});
+  hR.addEventListener('touchstart',  e=>start('right',e),{passive:false});
+  sel.addEventListener('touchstart', e=>start('sel',e),{passive:false});
+}
+
+// Global drag handlers
+document.addEventListener('mousemove', onDrag);
+document.addEventListener('mouseup',   ()=>{ zoomDrag=null; });
+document.addEventListener('touchmove', onDrag, {passive:false});
+document.addEventListener('touchend',  ()=>{ zoomDrag=null; });
+
+function onDrag(e) {
+  if (!zoomDrag) return;
+  e.preventDefault();
+  const track = document.getElementById('zoomTrack');
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const rx = Math.max(0, Math.min(1, (cx-rect.left)/rect.width));
+  const delta = rx - zoomDrag.startX;
+  let [l,r] = zoomDrag.startRange;
+  if      (zoomDrag.type==='left')  l = Math.max(0, Math.min(l+delta, r-0.04));
+  else if (zoomDrag.type==='right') r = Math.min(1, Math.max(r+delta, l+0.04));
+  else { const w=r-l; l=Math.max(0,Math.min(l+delta,1-w)); r=l+w; }
+  zoomRange = [l,r];
+  clearYearActive();
+  selectedLotIdx = null;
+  updateZoomUI();
+  renderChart();
+  renderLots();
+  renderFiltersAndMetrics();
+}
+
+// ─── Scroll / trackpad zoom ──────────────────────────────────────────────────
+function attachWheelZoom() {
+  const chartArea = document.getElementById('chartArea');
+  if (!chartArea) return;
+  // Remove any previous listener to avoid stacking on re-render
+  chartArea.removeEventListener('wheel', onChartWheel);
+  chartArea.addEventListener('wheel', onChartWheel, { passive: false });
+}
+
+function onChartWheel(e) {
+  e.preventDefault();
+  const chartArea = document.getElementById('chartArea');
+  const rect  = chartArea.getBoundingClientRect();
+  // Cursor position as fraction of chart width (0=left, 1=right)
+  const cursorFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+
+  // Zoom factor: pinch in (deltaY < 0) = zoom in, pinch out = zoom out
+  const zoomFactor = e.deltaY < 0 ? 0.85 : 1.18;
+  let [l, r] = zoomRange;
+  const span = r - l;
+  const newSpan = Math.min(1, Math.max(0.03, span * zoomFactor));
+  // Anchor zoom to cursor position
+  const anchor = l + cursorFrac * span;
+  l = Math.max(0, anchor - cursorFrac * newSpan);
+  r = Math.min(1, l + newSpan);
+  if (r === 1) l = Math.max(0, r - newSpan);
+
+  zoomRange = [l, r];
+  clearYearActive();
+  updateZoomUI();
+  renderChart();
+  renderLots();
+}
+
+function clearYearActive() {
+  document.querySelectorAll('.year-btn').forEach(b=>b.classList.remove('active'));
+}
+
+function setYearRange(yrs) {
+  const s = SCENARIOS[activeKey];
+  const { span } = getBounds(s);
+  zoomRange = yrs===0 ? [0,1] : [Math.max(0,1-Math.min(1,yrs/span)),1];
+  updateZoomUI();
+  renderChart();
+  renderLots();
+  document.querySelectorAll('.year-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent===(yrs===0?'All':yrs+'y'));
+  });
+}
+
+function resetZoom() {
+  zoomRange = [0,1];
+  renderFiltersAndMetrics();
+  const ca = document.getElementById('chartArea');
+  ca.innerHTML = `<svg id="mainChart" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>`;
+  updateZoomUI();
+  renderChart();
+  renderLots();
+}
+
+// ─── Lot list ─────────────────────────────────────────────────────────────────
+function getVisibleLots() {
+  const s = SCENARIOS[activeKey];
+  const { minYear, maxYear, span } = getBounds(s);
+  const visMin = minYear + zoomRange[0]*span;
+  const visMax = minYear + zoomRange[1]*span;
+  return s.data.filter(d => d.year >= visMin-0.01 && d.year <= visMax+0.01);
+}
+
+function selectLot(idx) {
+  selectedLotIdx = idx;
+  renderChart();
+  renderLotCard();
+  updateCardTop();
+}
+
+function clearSelection() {
+  selectedLotIdx = null;
+  document.getElementById('lotPanel').classList.remove('visible');
+  document.querySelectorAll('.lot-row').forEach(r => r.classList.remove('highlighted'));
+  renderChart(); // renderHiddenBanner called inside renderChart
+}
+
+function stepLot(delta) {
+  const lots = getVisibleLots();
+  const next = selectedLotIdx + delta;
+  if (next >= 0 && next < lots.length) selectLot(next);
+}
+
+function renderHiddenBanner() {
+  // Render as a subtle inline SVG text in the top-right of the chart
+  // Called after renderChart so the SVG exists
+  const svg = document.getElementById('mainChart');
+  if (!svg) return;
+  // Remove any existing hidden note
+  const existing = svg.getElementById('hiddenNote');
+  if (existing) existing.remove();
+  if (hiddenLots.size === 0) return;
+  const label = hiddenLots.size === 1 ? '1 lot hidden' : `${hiddenLots.size} lots hidden`;
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('id', 'hiddenNote');
+  g.setAttribute('style', 'cursor:pointer');
+  g.setAttribute('onclick', 'resetHidden()');
+  g.innerHTML = `
+    <text x="720" y="11" text-anchor="end" font-size="9" fill="#999">${label}</text>
+    <rect x="722" y="1" width="58" height="14" rx="3" fill="#f5f7fd" stroke="#d0d8ee" stroke-width="1"/>
+    <text x="751" y="11" text-anchor="middle" font-size="9" fill="#1e50a0" font-weight="500">Show all</text>`;
+  svg.appendChild(g);
+}
+
+function renderLotCard() {
+  const lots  = getVisibleLots();
+  const d     = lots[selectedLotIdx];
+  const panel = document.getElementById('lotPanel');
+  if (!d) { panel.classList.remove('visible'); return; }
+  const idx   = selectedLotIdx;
+  const total = lots.length;
+
+  const statusTag = d.status==='sold' ? `<span class="lot-status-tag tag-sold">Sold</span>`
+    : d.status==='unsold' ? `<span class="lot-status-tag tag-unsold">Unsold</span>`
+    : d.status==='upcoming' ? `<span class="lot-status-tag tag-upcoming">Upcoming</span>`
+    : `<span class="lot-status-tag tag-unsold">No result</span>`;
+
+  const priceStr = d.price ? fmtP(d.price) : '—';
+  const estStr   = d.est   ? `${fmtP(d.est[0])} – ${fmtP(d.est[1])}` : '—';
+
+  panel.innerHTML = `
+    <div class="lot-panel-nav">
+      <span class="lot-panel-nav-label">${idx+1} of ${total} lots in view</span>
+      <div class="lot-panel-nav-btns">
+        <button class="lot-nav-btn" onclick="stepLot(-1)" ${idx===0?'disabled':''}>←</button>
+        <button class="lot-nav-btn" onclick="stepLot(1)"  ${idx===total-1?'disabled':''}>→</button>
+        <button class="lot-panel-close" onclick="clearSelection()">✕ Clear</button>
+      </div>
+    </div>
+    <div class="lot-panel-card">
+      <div class="lot-panel-img">Lot img</div>
+      <div class="lot-panel-body">
+        <div class="lot-panel-title">${d.title}</div>
+        <div class="lot-panel-auction">${d.auction} · ${Math.floor(d.year)}</div>
+        <div class="lot-panel-fields">
+          <div class="lot-panel-field"><label>Status</label>${statusTag}</div>
+          <div class="lot-panel-field"><label>Realized</label><span>${priceStr}</span></div>
+          <div class="lot-panel-field"><label>Estimate</label><span>${estStr}</span></div>
+          <a class="lot-panel-link" href="#" onclick="return false">View lot →</a>
+          <button class="hide-lot-btn" id="hideLotBtn">Hide from chart</button>
+        </div>
+      </div>
+    </div>`;
+  panel.classList.add('visible');
+
+  // Wire up hide button after innerHTML is set
+  const hideBtn = document.getElementById('hideLotBtn');
+  if (hideBtn) {
+    const isHidden = hiddenLots.has(d.title);
+    hideBtn.textContent = isHidden ? 'Show in chart' : 'Hide from chart';
+    hideBtn.style.color = isHidden ? '#1e50a0' : '#c0392b';
+    hideBtn.style.borderColor = isHidden ? '#c0ccee' : '#e8c0c0';
+    hideBtn.style.background = isHidden ? '#f5f7fd' : '#fff8f8';
+    hideBtn.onclick = () => {
+      if (hiddenLots.has(d.title)) restoreLot(d.title);
+      else hideLot(d.title);
+    };
+  }
+
+  // Highlight corresponding row in list — no scrolling, chart stays in view
+  document.querySelectorAll('.lot-row').forEach(r => r.classList.remove('highlighted'));
+  const rows = document.querySelectorAll('.lot-row');
+  if (rows[idx]) rows[idx].classList.add('highlighted');
+}
+
+function renderLots() {
+  const s = SCENARIOS[activeKey];
+  const { minYear, maxYear, span } = getBounds(s);
+  const visMin = minYear + zoomRange[0]*span;
+  const visMax = minYear + zoomRange[1]*span;
+  const list = s.data.filter(d => d.year >= visMin-0.01 && d.year <= visMax+0.01);
+  document.getElementById('lotList').innerHTML = list.map((d,i) => {
+    const tag = d.status==='sold' ? `<span class="lot-status-tag tag-sold">Sold</span>`
+      : d.status==='unsold' ? `<span class="lot-status-tag tag-unsold">Unsold</span>`
+      : d.status==='upcoming' ? `<span class="lot-status-tag tag-upcoming">Upcoming</span>`
+      : `<span class="lot-status-tag tag-unsold">No result</span>`;
+    return `<div class="lot-row">
+      <div class="lot-thumb">Lot img</div>
+      <div class="lot-info">
+        <div class="lot-title">${d.title}</div>
+        <div class="lot-meta">${d.auction} · ${Math.floor(d.year)}</div>
+      </div>
+      <div class="lot-right">${tag}
+        ${d.price?`<div class="price-val">${fmtP(d.price)}</div>`:''}
+        ${d.est?`<div class="price-est">est. ${fmtP(d.est[0])}–${fmtP(d.est[1])}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Scenario switch ──────────────────────────────────────────────────────────
+function showScenario(key, btn) {
+  activeKey  = key;
+  zoomRange  = key==='empty' ? [0.25,0.65] : [0,1];
+  selectedLotIdx = null;
+  hiddenLots.clear();
+  closePopover();
+  const bs = document.getElementById('hiddenBannerSlot'); if (bs) bs.innerHTML = '';
+
+  document.querySelectorAll('.scenario-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+
+  const s = SCENARIOS[key];
+  document.getElementById('estToggleSlot').innerHTML = `
+    <label class="est-toggle">
+      <input type="checkbox" id="estToggleInput" ${showEstimate ? 'checked' : ''} onchange="toggleEstimate(this)">
+      <div class="toggle-track"></div>
+      <span class="toggle-label">Show estimate range</span>
+    </label>`;
+  document.getElementById('scenarioMeta').innerHTML = `<div class="scenario-desc">${s.desc}</div>`;
+  document.getElementById('yearPickerSlot').innerHTML = s.showYearPicker
+    ? `<div class="year-picker">
+        <button class="year-btn" onclick="setYearRange(1)">1y</button>
+        <button class="year-btn" onclick="setYearRange(5)">5y</button>
+        <button class="year-btn" onclick="setYearRange(10)">10y</button>
+        <button class="year-btn active" onclick="setYearRange(0)">All</button>
+       </div>` : '';
+  document.getElementById('lastSaleSlot').innerHTML  = s.lastSaleYear
+    ? `<div class="last-sale-badge">Last sale – ${s.lastSaleYear}</div>` : '';
+
+
+  const ca = document.getElementById('chartArea');
+  ca.innerHTML = `<svg id="mainChart" viewBox="0 0 800 200" preserveAspectRatio="xMidYMid meet"></svg>`;
+
+  renderChart();
+  renderZoom();
+  renderLots();
+  renderFiltersAndMetrics();
+}
+
+let obsIgnore = false; // prevent observer fighting with manual expand
+
+function restoreLot(title) {
+  hiddenLots.delete(title);
+  renderChart();
+  renderLots();
+  renderHiddenBanner();
+  if (selectedLotIdx !== null) renderLotCard();
+}
+
+function hideLot(title) {
+  hiddenLots.add(title);
+  // Stay on card — move to next visible lot or previous if was last
+  const lots = getVisibleLots(); // already excludes hidden
+  const newIdx = Math.min(selectedLotIdx, lots.length - 1);
+  if (lots.length === 0) {
+    selectedLotIdx = null;
+    document.getElementById('lotPanel').classList.remove('visible');
+  } else {
+    selectedLotIdx = newIdx;
+  }
+  renderChart();
+  renderLots();
+  renderHiddenBanner();
+  if (selectedLotIdx !== null) renderLotCard();
+}
+
+function resetHidden() {
+  hiddenLots.clear();
+  renderChart();
+  renderLots();
+  renderHiddenBanner();
+}
+
+function restoreHiddenAt(year) {
+  // Restore all hidden lots at a given year
+  s = SCENARIOS[activeKey];
+  s.data.filter(d => Math.abs(d.year - year) < 0.01 && hiddenLots.has(d.title))
+        .forEach(d => hiddenLots.delete(d.title));
+  renderChart();
+  renderLots();
+  renderHiddenBanner();
+}
+
+function renderFiltersAndMetrics() {
+  const s = SCENARIOS[activeKey];
+  const lots = getVisibleLots();
+  const allLots = s.data.filter(d => !hiddenLots.has(d.title));
+
+  // ── Filters ──
+  const sold   = allLots.filter(d => d.status === 'sold').length;
+  const unsold = allLots.filter(d => d.status === 'unsold').length;
+  const upcoming = allLots.filter(d => d.status === 'upcoming').length;
+
+  document.getElementById('filtersSlot').innerHTML = `
+    <div class="filters-bar">
+      <button class="filter-chip filter-all">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4">
+          <line x1="1" y1="3" x2="12" y2="3"/><line x1="3" y1="6.5" x2="10" y2="6.5"/><line x1="5" y1="10" x2="8" y2="10"/>
+        </svg>
+        All Filters
+      </button>
+      <button class="filter-chip active">Sold <span class="count">(${sold})</span></button>
+      <button class="filter-chip">Unsold <span class="count">(${unsold})</span></button>
+      ${upcoming ? `<button class="filter-chip">Upcoming <span class="count">(${upcoming})</span></button>` : ''}
+      <button class="filter-sort">Sale Date (Newest First) ▾</button>
+    </div>`;
+
+  // ── Metrics ──
+  const soldLots   = lots.filter(d => d.status === 'sold' && d.price);
+  const prices     = soldLots.map(d => d.price);
+  const totalLots  = lots.length;
+  const str        = totalLots ? Math.round((soldLots.length / totalLots) * 100) : 0;
+  const minPrice   = prices.length ? Math.min(...prices) : null;
+  const maxPrice   = prices.length ? Math.max(...prices) : null;
+  const lastSold   = [...lots].filter(d=>d.price).sort((a,b)=>b.year-a.year)[0];
+
+  // Sold vs estimate
+  let above=0, within=0, below=0;
+  soldLots.forEach(d => {
+    if (!d.est) return;
+    if (d.price > d.est[1]) above++;
+    else if (d.price < d.est[0]) below++;
+    else within++;
+  });
+  const total = above+within+below || 1;
+  const abovePct = Math.round(above/total*100);
+  const withinPct = Math.round(within/total*100);
+  const belowPct = 100-abovePct-withinPct;
+
+  const fmtDate = y => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const mo = Math.round((y % 1) * 12);
+    return months[Math.min(mo,11)] + '. ' + Math.floor(y);
+  };
+
+  document.getElementById('metricsSlot').innerHTML = `
+    <div class="metrics-bar">
+      <div class="metric">
+        <div class="metric-label">Repeat Sales</div>
+        <div class="metric-value">${totalLots} lots</div>
+        <div class="metric-sub">${soldLots.length} sold · STR ${str}%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Price Range</div>
+        <div class="metric-value">${minPrice && maxPrice ? fmtP(minPrice) + ' – ' + fmtP(maxPrice) : '—'}</div>
+        <div class="metric-sub">Realized</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Last Sold</div>
+        <div class="metric-value">${lastSold ? fmtDate(lastSold.year) : '—'}</div>
+        <div class="metric-sub">${lastSold ? lastSold.auction : ''}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Sold vs. Estimate</div>
+        <div class="metric-bar-wrap">
+          <div class="metric-bar-track">
+            <div class="metric-bar-above"  style="width:${abovePct}%"></div>
+            <div class="metric-bar-within" style="width:${withinPct}%"></div>
+            <div class="metric-bar-below"  style="width:${belowPct}%"></div>
+          </div>
+          <div class="metric-bar-labels">
+            <span style="color:#2a7a4a">${abovePct}% above</span>
+            <span>${withinPct}% within</span>
+            <span style="color:#c0392b">${belowPct}% below</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleChartCollapse() {
+  const h = document.getElementById('collapseHeader');
+  const b = document.getElementById('chartCollapsible');
+  if (!h.classList.contains('stuck')) return;
+  const open = h.classList.contains('expanded');
+  h.classList.toggle('expanded', !open);
+  b.classList.toggle('expanded', !open);
+  updateCardTop();
+}
+
+function updateCardTop() {
+  const panel = document.getElementById('lotPanel');
+  if (!panel.classList.contains('visible')) return;
+  const h = document.getElementById('collapseHeader');
+  const b = document.getElementById('chartCollapsible');
+  const stuck = h.classList.contains('stuck');
+  const expanded = b.classList.contains('expanded');
+  if (stuck && expanded) {
+    // Wait for chart expand transition to finish, then measure real height
+    setTimeout(() => {
+      const headerH = h.getBoundingClientRect().height;
+      const chartH  = b.getBoundingClientRect().height;
+      panel.style.top = (headerH + chartH) + 'px';
+    }, 300);
+  } else if (stuck) {
+    // Chart collapsed — card sits just below header
+    setTimeout(() => {
+      const headerH = h.getBoundingClientRect().height;
+      panel.style.top = headerH + 'px';
+    }, 30);
+  } else {
+    panel.style.top = '0px';
+  }
+}
+
+// Watch when chart scrolls out of view — show/hide sticky header
+(function() {
+  document.addEventListener('DOMContentLoaded', () => {
+    const sentinel = document.createElement('div');
+    sentinel.id = 'chartSentinel';
+    sentinel.style.cssText = 'height:1px;margin:0;padding:0;';
+    // Place sentinel at the bottom of the collapsible so it triggers
+    // only when the full chart has scrolled out of view
+    const collapsible = document.getElementById('chartCollapsible');
+    collapsible.parentNode.insertBefore(sentinel, collapsible.nextSibling);
+
+    const obs = new IntersectionObserver(([entry]) => {
+      if (obsIgnore) return;
+      const h = document.getElementById('collapseHeader');
+      const b = document.getElementById('chartCollapsible');
+      if (!entry.isIntersecting) {
+        h.classList.add('stuck');
+        h.classList.remove('expanded');
+        b.classList.remove('expanded');
+      } else {
+        h.classList.remove('stuck');
+        h.classList.add('expanded');
+        b.classList.add('expanded');
+      }
+    // rootMargin: only trigger when the sentinel is 200px above the top edge
+    // i.e. the chart wrapper is fully out of view before collapsing
+    }, { threshold: 0, rootMargin: '-200px 0px 0px 0px' });
+
+    obs.observe(sentinel);
+  });
+})();
+
+function toggleEstimate(cb) {
+  showEstimate = cb.checked;
+  renderChart();
+}
+
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+const tabsEl = document.getElementById('scenarioTabs');
+Object.entries(SCENARIOS).forEach(([key, s]) => {
+  const btn = document.createElement('button');
+  btn.className = 'scenario-tab' + (key===activeKey?' active':'');
+  btn.textContent = s.label;
+  btn.onclick = () => showScenario(key, btn);
+  tabsEl.appendChild(btn);
+});
+showScenario('normal', tabsEl.querySelector('.scenario-tab'));
+</script>
+</body>
+</html>
+
